@@ -1,0 +1,87 @@
+name: Extract ZIP and Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # البحث عن ملف ZIP وفك الضغط تلقائياً
+      - name: Extract ZIP automatically
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ZIP_FILE=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1 || true)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "لم يتم العثور على ملف ZIP في المستودع."
+            exit 1
+          fi
+
+          echo "ZIP: $ZIP_FILE"
+
+          mkdir -p /tmp/extracted-project
+          unzip -oq "$ZIP_FILE" -d /tmp/extracted-project
+
+          PACKAGE_FILE=$(find /tmp/extracted-project -type f -name package.json | head -n 1 || true)
+
+          if [ -z "$PACKAGE_FILE" ]; then
+            echo "خطأ: package.json غير موجود داخل ZIP."
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PACKAGE_FILE")
+
+          cp -a "$PROJECT_DIR"/. .
+
+          echo "تم فك الضغط وتجهيز ملفات المشروع."
+
+          test -f package.json
+          test -f capacitor.config.json
+          test -f www/index.html
+
+      - name: Install project dependencies
+        run: npm install
+
+      - name: Prepare Android
+        run: npx cap add android
+
+      - name: Synchronize project
+        run: npx cap sync android
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Build APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK for download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Daftar-Al-Aqarat-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
